@@ -225,7 +225,7 @@ where
 }
 
 #[cfg(test)]
-mod test_helpers {
+pub mod test_helpers {
   use async_std::io::Read;
   use async_std::task::{Context, Poll};
   use std::io::Error;
@@ -273,7 +273,7 @@ mod test_helpers {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
   use super::recognize;
   use super::test_helpers::AsyncBuffer;
   use async_std::task::block_on;
@@ -284,6 +284,28 @@ mod tests {
     let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\n\r\n");
     let result = block_on(async { recognize(&mut buffer).await });
     assert!(result.is_ok());
+    let head = result.unwrap();
+    assert_eq!(head.method(), Some(String::from("GET")));
+    assert_eq!(head.len(), None);
+  }
+
+  #[test]
+  fn recognize_valid_with_len() {
+    println!("hello world");
+    let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\nContent-Length: 10\r\n\r\n");
+    let result = block_on(async { recognize(&mut buffer).await });
+    assert!(result.is_ok());
+    let head = result.unwrap();
+    assert_eq!(head.method(), Some(String::from("GET")));
+    assert_eq!(head.len(), Some(10));
+  }
+
+  #[test]
+  fn recognize_bad_content_length() {
+    println!("hello world");
+    let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\nContent-Length: bad\r\n\r\n");
+    let result = block_on(async { recognize(&mut buffer).await });
+    assert!(result.is_err());
   }
 
   #[test]
