@@ -225,94 +225,12 @@ where
 }
 
 #[cfg(test)]
-pub mod test_helpers {
-  use async_std::io::Read;
-  use async_std::task::{Context, Poll};
-  use std::io::Error;
-  use std::pin::Pin;
-
-  pub struct AsyncBuffer {
-    source: String,
-  }
-
-  impl AsyncBuffer {
-    pub fn new<S>(inner: S) -> Self
-    where
-      S: Into<String>,
-    {
-      AsyncBuffer { source: inner.into() }
-    }
-  }
-
-  impl Read for AsyncBuffer {
-    fn poll_read(mut self: Pin<&mut Self>, _cx: &mut Context, dest: &mut [u8]) -> Poll<Result<usize, Error>> {
-      let mut written = 0;
-
-      for b in &mut *dest {
-        let (start, end) = self.source.split_at(1);
-
-        if start.len() == 0 {
-          break;
-        }
-
-        let byte = start.bytes().nth(0);
-
-        match byte {
-          Some(byte) => {
-            self.source = String::from(end);
-            *b = byte as u8;
-            written += 1;
-          }
-          None => break,
-        }
-      }
-
-      Poll::Ready(Ok(written))
-    }
-  }
-}
-
-#[cfg(test)]
-pub mod tests {
-  use super::recognize;
-  use super::test_helpers::AsyncBuffer;
-  use async_std::task::block_on;
+mod tests {
+  use super::parse_request_line;
 
   #[test]
-  fn recognize_valid_without_body() {
-    println!("hello world");
-    let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\n\r\n");
-    let result = block_on(async { recognize(&mut buffer).await });
-    assert!(result.is_ok());
-    let head = result.unwrap();
-    assert_eq!(head.method(), Some(String::from("GET")));
-    assert_eq!(head.len(), None);
-  }
-
-  #[test]
-  fn recognize_valid_with_len() {
-    println!("hello world");
-    let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\nContent-Length: 10\r\n\r\n");
-    let result = block_on(async { recognize(&mut buffer).await });
-    assert!(result.is_ok());
-    let head = result.unwrap();
-    assert_eq!(head.method(), Some(String::from("GET")));
-    assert_eq!(head.len(), Some(10));
-  }
-
-  #[test]
-  fn recognize_bad_content_length() {
-    println!("hello world");
-    let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\nContent-Length: bad\r\n\r\n");
-    let result = block_on(async { recognize(&mut buffer).await });
-    assert!(result.is_err());
-  }
-
-  #[test]
-  fn recognize_fail_bad_start() {
-    println!("hello world");
-    let mut buffer = AsyncBuffer::new("\r\n");
-    let result = block_on(async { recognize(&mut buffer).await });
+  fn valid_request_lint() {
+    let result = parse_request_line(String::from("whoa"));
     assert!(result.is_err());
   }
 }
