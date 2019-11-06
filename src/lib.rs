@@ -2,6 +2,7 @@ extern crate async_std;
 
 use async_std::io::Read;
 use async_std::prelude::*;
+use std::collections::VecDeque;
 use std::io::ErrorKind::UnexpectedEof;
 use std::io::{Error, ErrorKind};
 
@@ -85,6 +86,134 @@ where
   M: std::fmt::Display,
 {
   Error::new(ErrorKind::Other, format!("{}: {}", message, e))
+}
+
+#[derive(Debug)]
+enum Capacity {
+  One,
+  Two,
+  Three,
+  Four,
+}
+
+#[derive(Debug)]
+struct Marker {
+  capacity: Capacity,
+}
+
+impl Default for Marker {
+  fn default() -> Marker {
+    Marker {
+      capacity: Capacity::Four,
+    }
+  }
+}
+
+pub async fn recog<R>(reader: &mut R) -> Result<VecDeque<String>, Error>
+where
+  R: Read + std::marker::Unpin,
+{
+  let mut marker = Marker::default();
+  let mut headers: VecDeque<String> = VecDeque::new();
+
+  loop {
+    let mut buf: Vec<u8> = match &marker.capacity {
+      Capacity::Four => vec![0x13, 0x10, 0x13, 0x10],
+      Capacity::Three => vec![0x10, 0x13, 0x10],
+      Capacity::Two => vec![0x13, 0x10],
+      Capacity::One => vec![0x10],
+    };
+
+    let size = reader.read(&mut buf).await?;
+    let parsed = std::str::from_utf8(&buf[0..size]).map_err(|e| normalize_err(e, "Invalid utf-8 boundary"))?;
+    let mut chars = parsed.chars();
+
+    match (&marker.capacity, chars.next(), chars.next(), chars.next(), chars.next()) {
+      // clean terminal
+      (_, Some('\r'), Some('\n'), Some('\r'), Some('\n')) => break,
+      // terminal from previous '\r\n\r'
+      (Capacity::One, Some('\n'), _, _, _) => break,
+      // terminal from previous '\r\n'
+      (Capacity::Two, Some('\r'), Some('\n'), _, _) => break,
+      // non-terminal: had a cr lf but now working with something else
+      (Capacity::Two, Some(one), Some(two), _, _) => {
+        headers.push_back([one, two].iter().collect::<String>());
+        marker.capacity = Capacity::Four;
+      }
+      // terminal from previous '\r'
+      (Capacity::Three, Some('\n'), Some('\r'), Some('\n'), _) => break,
+
+      // any char followed by '\r\n\r' - queue up single read
+      (_, Some(one), Some('\r'), Some('\n'), Some('\r')) => {
+        match headers.back_mut() {
+          Some(header) => header.push(one),
+          None => headers.push_back(one.to_string()),
+        }
+        marker.capacity = Capacity::One;
+      }
+
+      // any chars followed by '\r\n' - queue up double read
+      (_, Some(one), Some(two), Some('\r'), Some('\n')) => {
+        match headers.back_mut() {
+          Some(header) => {
+            header.reserve(2);
+            header.push(one);
+            header.push(two);
+          }
+          None => headers.push_back([one, two].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Two;
+      }
+
+      // any chars followed by '\r' - queue up triple read
+      (_, Some(one), Some(two), Some(three), Some('\r')) => {
+        match headers.back_mut() {
+          Some(header) => {
+            header.reserve(3);
+            header.push(one);
+            header.push(two);
+            header.push(three);
+          }
+          None => headers.push_back([one, two, three].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Three;
+      }
+
+      (_, Some('\r'), Some('\n'), Some(one), Some(two)) => {
+        headers.push_back([one, two].iter().collect::<String>());
+        marker.capacity = Capacity::Four;
+      }
+
+      (_, Some(one), Some('\r'), Some('\n'), Some(two)) => {
+        match headers.back_mut() {
+          Some(header) => {
+            header.push(one);
+          }
+          None => headers.push_back(one.to_string()),
+        }
+        headers.push_back(two.to_string());
+        marker.capacity = Capacity::Four;
+      }
+
+      (_, Some(one), Some(two), Some(three), Some(four)) => {
+        match headers.back_mut() {
+          Some(header) => {
+            header.reserve(4);
+            header.push(one);
+            header.push(two);
+            header.push(three);
+            header.push(four);
+          }
+          None => headers.push_back([one, two, three, four].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Four;
+      }
+
+      _ => return Err(Error::new(ErrorKind::Other, "Invalid sequence")),
+    }
+  }
+
+  Ok(headers)
 }
 
 pub async fn recognize<R>(reader: &mut R) -> Result<Head, Error>
