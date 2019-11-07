@@ -6,7 +6,6 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - name: update-stable
-        run: cargo test
         run: rustup toolchain install stable
       - name: test
         run: cargo test
