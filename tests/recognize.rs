@@ -3,14 +3,21 @@
 mod helpers;
 
 use async_std::task::block_on;
-use elaine::{recog, recognize, rere};
+use elaine::recognize;
 use helpers::AsyncBuffer;
+
+fn buffer_from(source: &[u8]) -> AsyncBuffer {
+  AsyncBuffer::new(format!(
+    "GET /first HTTP1.1\r\nComplex: {}",
+    std::str::from_utf8(source).unwrap()
+  ))
+}
 
 #[test]
 fn test_rere_two() {
   let tail: &[u8] = &[0x61, 0x61, 0x61, 0xC9, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
   let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
-  let result = block_on(async { rere(&mut full).await });
+  let result = block_on(async { recognize(&mut full).await });
   assert!(result.is_ok())
 }
 
@@ -18,7 +25,7 @@ fn test_rere_two() {
 fn test_rere_three() {
   let tail: &[u8] = &[0x61, 0x61, 0xE0, 0xA1, 0x98, 0x0d, 0x0a, 0x0d, 0x0a];
   let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
-  let result = block_on(async { rere(&mut full).await });
+  let result = block_on(async { recognize(&mut full).await });
   assert!(result.is_ok())
 }
 
@@ -26,7 +33,7 @@ fn test_rere_three() {
 fn test_rere_full() {
   let tail: &[u8] = &[0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
   let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
-  let result = block_on(async { rere(&mut full).await });
+  let result = block_on(async { recognize(&mut full).await });
   assert!(result.is_ok())
 }
 
@@ -34,157 +41,81 @@ fn test_rere_full() {
 fn test_rere_four() {
   let tail: &[u8] = &[0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
   let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
-  let result = block_on(async { rere(&mut full).await });
+  let result = block_on(async { recognize(&mut full).await });
   assert!(result.is_ok())
 }
 
 #[test]
 fn test_rere_after() {
   let mut full = AsyncBuffer::new("GET /foo HTTP1.1\r\nHost: 8080\r\nContent-Length: 3\r\n\r\nhey");
-  let result = block_on(async { rere(&mut full).await });
+  let result = block_on(async { recognize(&mut full).await });
   assert!(result.is_ok());
   assert_eq!(format!("{}", full), format!("{}", AsyncBuffer::new("hey")));
-  println!("result: {:?}", result);
 }
 
 #[test]
 fn test_recog_utf8_boundary_dangle_two() {
-  let mut buf: &[u8] = &[0x61, 0x61, 0x61, 0xE0, 0xA1, 0x98, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["aaaࡘ"]);
+  let buf: &[u8] = &[0x61, 0x61, 0x61, 0xE0, 0xA1, 0x98, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = buffer_from(buf);
+  let result = block_on(async { recognize(&mut full).await });
+  let complex = result.unwrap().find_header("Complex");
+  assert_eq!(complex, Some("aaaࡘ".to_string()));
 }
 
 #[test]
 fn test_recog_utf8_boundary_dangle_three() {
-  let mut buf: &[u8] = &[0x61, 0x61, 0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["aaa𐆒"]);
+  let buf: &[u8] = &[0x61, 0x61, 0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = buffer_from(buf);
+  let result = block_on(async { recognize(&mut full).await });
+  assert_eq!(result.unwrap().find_header("Complex"), Some("aaa𐆒".to_string()));
 }
 
 #[test]
 fn test_recog_utf8_boundary_half_debt_one() {
-  let mut buf: &[u8] = &[0x61, 0x61, 0xC9, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["aaɒ"]);
+  let buf: &[u8] = &[0x61, 0x61, 0xC9, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = buffer_from(buf);
+  let result = block_on(async { recognize(&mut full).await });
+  assert_eq!(result.unwrap().find_header("Complex"), Some("aaɒ".to_string()));
 }
 
 #[test]
 fn test_recog_utf8_boundary_half_debt_two() {
-  let mut buf: &[u8] = &[0x61, 0xC9, 0x92, 0x61, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["aɒa"]);
+  let buf: &[u8] = &[0x61, 0xC9, 0x92, 0x61, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = buffer_from(buf);
+  let result = block_on(async { recognize(&mut full).await });
+  assert_eq!(result.unwrap().find_header("Complex"), Some("aɒa".to_string()));
 }
 
 #[test]
 fn test_recog_utf8_boundary_half_dangle_one() {
-  let mut buf: &[u8] = &[0x61, 0x61, 0xE0, 0xA1, 0x98, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["aaࡘ"]);
+  let buf: &[u8] = &[0x61, 0x61, 0xE0, 0xA1, 0x98, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = buffer_from(buf);
+  let result = block_on(async { recognize(&mut full).await });
+  assert_eq!(result.unwrap().find_header("Complex"), Some("aaࡘ".to_string()));
 }
 
 #[test]
 fn test_recog_utf8_boundary_half_dangle_three() {
-  let mut buf: &[u8] = &[0x61, 0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["aa𐆒"]);
+  let buf: &[u8] = &[0x61, 0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = buffer_from(buf);
+  let result = block_on(async { recognize(&mut full).await });
+  assert_eq!(result.unwrap().find_header("Complex"), Some("aa𐆒".to_string()));
 }
 
 #[test]
 fn test_recog_utf8_boundary_half_debt_one_four() {
-  let mut buf: &[u8] = &[0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["a𐆒"]);
+  let buf: &[u8] = &[0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = buffer_from(buf);
+  let result = block_on(async { recognize(&mut full).await });
+  assert_eq!(result.unwrap().find_header("Complex"), Some("a𐆒".to_string()));
 }
 
 #[test]
 fn test_single_char_utf8() {
-  let mut buf: &[u8] = &[0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["𐆒"]);
-}
-
-#[test]
-fn test_recog_single_block() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}", "AAAA", "\r\n\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AAAA"]);
-}
-
-#[test]
-fn test_recog_single_dangle_one() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}", "AAAA", "A\r\n\r", "\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AAAAA"]);
-}
-
-#[test]
-fn test_recog_single_dangle_two() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}", "AAAA", "AA\r\n", "\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AAAAAA"]);
-}
-
-#[test]
-fn test_recog_single_dangle_three() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}", "AAAA", "AAA\r", "\n\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AAAAAAA"]);
-}
-
-#[test]
-fn test_recog_multi_block_start() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}", "AAAA", "\r\nBB", "\r\n\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AAAA", "BB"]);
-}
-
-#[test]
-fn test_recog_multi_block_start_dangle_one() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}{}", "AAAA", "\r\nBB", "B\r\n\r", "\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AAAA", "BBB"]);
-}
-
-#[test]
-fn test_recog_multi_block_start_dangle_two() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}{}", "AAAA", "\r\nBB", "BB\r\n", "\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AAAA", "BBBB"]);
-}
-
-#[test]
-fn test_recog_multi_block_start_dangle_three() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}{}", "AAAA", "\r\nBB", "BBB\r", "\n\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AAAA", "BBBBB"]);
-}
-
-#[test]
-fn test_recog_multi_block_end() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}", "AA\r\n", "BBBB", "\r\n\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AA", "BBBB"]);
-}
-
-#[test]
-fn test_recog_multi_block_end_dangle_one() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}{}", "AA\r\n", "BBBB", "B\r\n\r", "\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AA", "BBBBB"]);
-}
-
-#[test]
-fn test_recog_multi_block_end_dangle_two() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}{}", "AA\r\n", "BBBB", "BB\r\n", "\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AA", "BBBBBB"]);
-}
-
-#[test]
-fn test_recog_multi_block_end_dangle_three() {
-  let mut buffer = AsyncBuffer::new(format!("{}{}{}{}", "AA\r\n", "BBBB", "BBB\r", "\n\r\n"));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["AA", "BBBBBBB"]);
+  let buf: &[u8] = &[0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = buffer_from(buf);
+  let result = block_on(async { recognize(&mut full).await });
+  assert_eq!(result.unwrap().find_header("Complex"), Some("𐆒".to_string()));
 }
 
 #[test]
@@ -193,8 +124,8 @@ fn test_recog_http_example() {
     "{}{}{}{}{}{}{}{}{}{}{}{}",
     "GET ", "/hel", "lo-w", "orld", " HTT", "P/1.", "1\r\nC", "onte", "nt-L", "engt", "h: 3", "\r\n\r\n"
   ));
-  let result = block_on(async { recog(&mut buffer).await });
-  assert_eq!(result.unwrap(), vec!["GET /hello-world HTTP/1.1", "Content-Length: 3"]);
+  let result = block_on(async { recognize(&mut buffer).await });
+  assert_eq!(result.unwrap().method(), Some("GET".to_string()));
 }
 
 #[test]
