@@ -26,6 +26,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 ```
 
+
+| elaine |
+| --- |
+| ![elaine][elaine] |
+
 ## Contributing
 
 See [CONTRIBUTING](/CONTRIBUTING.md).
@@ -39,4 +44,4 @@ See [CONTRIBUTING](/CONTRIBUTING.md).
 [docs.url]: https://docs.rs/elaine/latest
 [crates.url]: https://crates.io/crates/elaine
 [crates.img]: https://img.shields.io/crates/v/elaine
-[elaine]: https://user-images.githubusercontent.com/1545348/68049259-d341d600-fcb8-11e9-9f25-e1bcf122cd59.gif
+[elaine]: https://user-images.githubusercontent.com/1545348/68368941-1cee4e80-0107-11ea-8e87-47cb29cf8e15.gif
