@@ -5,7 +5,7 @@ use async_std::task::block_on;
 use elaine::{recognize, Head};
 use std::error::Error;
 
-async fn route<R>(conn: Head, stream: R) -> Result<Option<Vec<u8>>, std::io::Error>
+async fn route<R>(conn: Head, stream: &mut R) -> Result<Option<Vec<u8>>, std::io::Error>
 where
   R: Read + Write + std::marker::Unpin,
 {
@@ -18,9 +18,12 @@ where
       body.push(byte);
     }
 
-    return Ok(Some(body));
+    println!("read body: {:?}", String::from_utf8(body));
+    stream.write(b"HTTP/1.1 200 OK\r\n\r\n").await?;
+    return Ok(None);
   }
 
+  stream.write(b"HTTP/1.1 200 OK\r\n\r\n").await?;
   Ok(None)
 }
 
@@ -34,14 +37,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     loop {
       match listener.incoming().next().await {
         Some(Ok(mut stream)) => {
-          let res = recognize(&mut stream).await?;
-          println!("[debug] recognized request: \r\n---\r\n{}\r\n---\r\n", res);
-
-          match route(res, &mut stream).await? {
-            Some(body) => println!("body: {}", String::from_utf8(body)?),
-            None => println!("no body"),
-          };
-
+          let head = recognize(&mut stream).await?;
+          println!("responding to {}", head);
+          route(head, &mut stream).await?;
+          println!("done");
           drop(stream);
         }
         _ => continue,
