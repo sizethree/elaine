@@ -7,6 +7,69 @@ use elaine::{recog, recognize};
 use helpers::AsyncBuffer;
 
 #[test]
+fn test_recog_utf8_boundary_dangle_one() {
+  let mut buf: &[u8] = &[0x61, 0x61, 0x61, 0xC9, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["aaaɒ"]);
+}
+
+#[test]
+fn test_recog_utf8_boundary_dangle_two() {
+  let mut buf: &[u8] = &[0x61, 0x61, 0x61, 0xE0, 0xA1, 0x98, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["aaaࡘ"]);
+}
+
+#[test]
+fn test_recog_utf8_boundary_dangle_three() {
+  let mut buf: &[u8] = &[0x61, 0x61, 0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["aaa𐆒"]);
+}
+
+#[test]
+fn test_recog_utf8_boundary_half_debt_one() {
+  let mut buf: &[u8] = &[0x61, 0x61, 0xC9, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["aaɒ"]);
+}
+
+#[test]
+fn test_recog_utf8_boundary_half_debt_two() {
+  let mut buf: &[u8] = &[0x61, 0xC9, 0x92, 0x61, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["aɒa"]);
+}
+
+#[test]
+fn test_recog_utf8_boundary_half_dangle_one() {
+  let mut buf: &[u8] = &[0x61, 0x61, 0xE0, 0xA1, 0x98, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["aaࡘ"]);
+}
+
+#[test]
+fn test_recog_utf8_boundary_half_dangle_three() {
+  let mut buf: &[u8] = &[0x61, 0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["aa𐆒"]);
+}
+
+#[test]
+fn test_recog_utf8_boundary_half_debt_one_four() {
+  let mut buf: &[u8] = &[0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["a𐆒"]);
+}
+
+#[test]
+fn test_single_char_utf8() {
+  let mut buf: &[u8] = &[0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let result = block_on(async { recog(&mut buf).await });
+  assert_eq!(result.unwrap(), vec!["𐆒"]);
+}
+
+#[test]
 fn test_recog_single_block() {
   let mut buffer = AsyncBuffer::new(format!("{}{}", "AAAA", "\r\n\r\n"));
   let result = block_on(async { recog(&mut buffer).await });
@@ -102,7 +165,6 @@ fn test_recog_http_example() {
 
 #[test]
 fn recognize_valid_without_body() {
-  println!("hello world");
   let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\n\r\n");
   let result = block_on(async { recognize(&mut buffer).await });
   assert!(result.is_ok());
@@ -113,7 +175,6 @@ fn recognize_valid_without_body() {
 
 #[test]
 fn recognize_valid_with_len() {
-  println!("hello world");
   let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\nContent-Length: 10\r\n\r\n");
   let result = block_on(async { recognize(&mut buffer).await });
   assert!(result.is_ok());
@@ -124,7 +185,6 @@ fn recognize_valid_with_len() {
 
 #[test]
 fn recognize_bad_content_length() {
-  println!("hello world");
   let mut buffer = AsyncBuffer::new("GET /foobar HTTP/1.0\r\nContent-Length: bad\r\n\r\n");
   let result = block_on(async { recognize(&mut buffer).await });
   assert!(result.is_err());
@@ -132,7 +192,6 @@ fn recognize_bad_content_length() {
 
 #[test]
 fn recognize_fail_bad_start() {
-  println!("hello world");
   let mut buffer = AsyncBuffer::new("\r\n");
   let result = block_on(async { recognize(&mut buffer).await });
   assert!(result.is_err());

@@ -125,8 +125,96 @@ where
     };
 
     let size = reader.read(&mut buf).await?;
-    let parsed = std::str::from_utf8(&buf[0..size]).map_err(|e| normalize_err(e, "Invalid utf-8 boundary"))?;
-    let mut chars = parsed.chars();
+    let chunk = match std::str::from_utf8(&buf[0..size]) {
+      Ok(c) => String::from(c),
+      Err(e) => match e.error_len() {
+        None => {
+          let (valid, after_valid) = buf.split_at(e.valid_up_to());
+          let stage = std::str::from_utf8(valid).map_err(|e| Error::new(ErrorKind::InvalidData, format!("{:?}", e)))?;
+          match after_valid {
+            [first, second, third] => {
+              let mut bytes = reader.bytes();
+              let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+              match std::str::from_utf8(&[*first, *second, *third, fourth]) {
+                Ok(rest) => format!("{}{}", stage, rest),
+                Err(e) => {
+                  return Err(Error::new(
+                    ErrorKind::Other,
+                    format!("Failed utf8 decode after third byte: {:?}", e),
+                  ));
+                }
+              }
+            }
+            [first, second] => {
+              let mut bytes = reader.bytes();
+              let third = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+              match std::str::from_utf8(&[*first, *second, third]) {
+                Ok(rest) => format!("{}{}", stage, rest),
+                Err(_e) => {
+                  let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+                  match std::str::from_utf8(&[*first, *second, third, fourth]) {
+                    Ok(rest) => format!("{}{}", stage, rest),
+                    Err(e) => {
+                      return Err(Error::new(
+                        ErrorKind::Other,
+                        format!("Failed utf8 decode after third byte: {:?}", e),
+                      ));
+                    }
+                  }
+                }
+              }
+            }
+            [single] => {
+              let mut bytes = reader.bytes();
+              let second = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+              match std::str::from_utf8(&[*single, second]) {
+                Ok(rest) => format!("{}{}", stage, rest),
+                Err(e) => match e.error_len() {
+                  None => {
+                    let third = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+
+                    match std::str::from_utf8(&[*single, second, third]) {
+                      Ok(rest) => format!("{}{}", stage, rest),
+                      Err(_e) => {
+                        let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+                        match std::str::from_utf8(&[*single, second, third, fourth]) {
+                          Ok(rest) => format!("{}{}", stage, rest),
+                          Err(e) => {
+                            return Err(Error::new(
+                              ErrorKind::Other,
+                              format!("Failed utf8 decode after third byte: {:?}", e),
+                            ));
+                          }
+                        }
+                      }
+                    }
+                  }
+                  Some(_) => {
+                    return Err(Error::new(
+                      ErrorKind::InvalidData,
+                      "Failed pulling second byte for utf-8 sequence",
+                    ));
+                  }
+                },
+              }
+            }
+            _ => {
+              return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Unable to determine correction for utf-8 boundary",
+              ))
+            }
+          }
+        }
+        Some(_) => {
+          return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("Invalid utf-8 sequence: {:?}", e),
+          ));
+        }
+      },
+    };
+    let mut chars = chunk.chars();
 
     match (&marker.capacity, chars.next(), chars.next(), chars.next(), chars.next()) {
       // clean terminal
@@ -208,7 +296,38 @@ where
         }
         marker.capacity = Capacity::Four;
       }
-
+      (_, Some(one), Some(two), Some(three), None) => {
+        match headers.back_mut() {
+          Some(header) => {
+            header.reserve(3);
+            header.push(one);
+            header.push(two);
+            header.push(three);
+          }
+          None => headers.push_back([one, two, three].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Four;
+      }
+      (_, Some(one), Some(two), None, None) => {
+        match headers.back_mut() {
+          Some(header) => {
+            header.reserve(2);
+            header.push(one);
+            header.push(two);
+          }
+          None => headers.push_back([one, two].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Four;
+      }
+      (_, Some(one), None, None, None) => {
+        match headers.back_mut() {
+          Some(header) => {
+            header.push(one);
+          }
+          None => headers.push_back(format!("{}", one)),
+        }
+        marker.capacity = Capacity::Four;
+      }
       _ => return Err(Error::new(ErrorKind::Other, "Invalid sequence")),
     }
   }
