@@ -35,8 +35,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 See [CONTRIBUTING](/CONTRIBUTING.md).
 
-[ci.img]: https://github.com/sizethree/sizethree/workflows/gh.build/badge.svg?flat
-[ci.url]: https://github.com/sizethree/sizethree/actions?workflow=gh.build
+[ci.img]: https://github.com/sizethree/elaine/workflows/gh.build/badge.svg?flat
+[ci.url]: https://github.com/sizethree/elaine/actions?workflow=gh.build
 [redis]: https://redis.io/topics/protocol
 [async-std]: https://github.com/async-rs/async-std
 [tcp-stream]: https://docs.rs/async-std/0.99.11/async_std/net/struct.TcpStream.html
