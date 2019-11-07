@@ -156,7 +156,102 @@ impl Default for Marker {
   }
 }
 
-pub async fn recognize<R>(reader: &mut R) -> Result<Head, Error>
+async fn fill_utf8<R>(original: &[u8], reader: R) -> Result<String, Error>
+where
+  R: Read + std::marker::Unpin,
+{
+  match std::str::from_utf8(original) {
+    Ok(c) => Ok(String::from(c)),
+    Err(e) => match e.error_len() {
+      None => {
+        let (valid, after_valid) = original.split_at(e.valid_up_to());
+        let stage = std::str::from_utf8(valid).map_err(|e| Error::new(ErrorKind::InvalidData, format!("{:?}", e)))?;
+        match after_valid {
+          [first, second, third] => {
+            let mut bytes = reader.bytes();
+            let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+            match std::str::from_utf8(&[*first, *second, *third, fourth]) {
+              Ok(rest) => Ok(format!("{}{}", stage, rest)),
+              Err(e) => {
+                return Err(Error::new(
+                  ErrorKind::Other,
+                  format!("Failed utf8 decode after third byte: {:?}", e),
+                ));
+              }
+            }
+          }
+          [first, second] => {
+            let mut bytes = reader.bytes();
+            let third = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+            match std::str::from_utf8(&[*first, *second, third]) {
+              Ok(rest) => Ok(format!("{}{}", stage, rest)),
+              Err(_e) => {
+                let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+                match std::str::from_utf8(&[*first, *second, third, fourth]) {
+                  Ok(rest) => Ok(format!("{}{}", stage, rest)),
+                  Err(e) => {
+                    return Err(Error::new(
+                      ErrorKind::Other,
+                      format!("Failed utf8 decode after third byte: {:?}", e),
+                    ));
+                  }
+                }
+              }
+            }
+          }
+          [single] => {
+            let mut bytes = reader.bytes();
+            let second = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+            match std::str::from_utf8(&[*single, second]) {
+              Ok(rest) => Ok(format!("{}{}", stage, rest)),
+              Err(e) => match e.error_len() {
+                None => {
+                  let third = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+
+                  match std::str::from_utf8(&[*single, second, third]) {
+                    Ok(rest) => Ok(format!("{}{}", stage, rest)),
+                    Err(_e) => {
+                      let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+                      match std::str::from_utf8(&[*single, second, third, fourth]) {
+                        Ok(rest) => Ok(format!("{}{}", stage, rest)),
+                        Err(e) => {
+                          return Err(Error::new(
+                            ErrorKind::Other,
+                            format!("Failed utf8 decode after third byte: {:?}", e),
+                          ));
+                        }
+                      }
+                    }
+                  }
+                }
+                Some(_) => {
+                  return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Failed pulling second byte for utf-8 sequence",
+                  ));
+                }
+              },
+            }
+          }
+          _ => {
+            return Err(Error::new(
+              ErrorKind::InvalidData,
+              "Unable to determine correction for utf-8 boundary",
+            ))
+          }
+        }
+      }
+      Some(_) => {
+        return Err(Error::new(
+          ErrorKind::InvalidData,
+          format!("Invalid utf-8 sequence: {:?}", e),
+        ));
+      }
+    },
+  }
+}
+
+pub async fn recognize<R>(mut reader: &mut R) -> Result<Head, Error>
 where
   R: Read + std::marker::Unpin,
 {
@@ -173,95 +268,7 @@ where
     };
 
     let size = reader.read(&mut buf).await?;
-    let chunk = match std::str::from_utf8(&buf[0..size]) {
-      Ok(c) => String::from(c),
-      Err(e) => match e.error_len() {
-        None => {
-          let (valid, after_valid) = buf.split_at(e.valid_up_to());
-          let stage = std::str::from_utf8(valid).map_err(|e| Error::new(ErrorKind::InvalidData, format!("{:?}", e)))?;
-          match after_valid {
-            [first, second, third] => {
-              let mut bytes = reader.bytes();
-              let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
-              match std::str::from_utf8(&[*first, *second, *third, fourth]) {
-                Ok(rest) => format!("{}{}", stage, rest),
-                Err(e) => {
-                  return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Failed utf8 decode after third byte: {:?}", e),
-                  ));
-                }
-              }
-            }
-            [first, second] => {
-              let mut bytes = reader.bytes();
-              let third = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
-              match std::str::from_utf8(&[*first, *second, third]) {
-                Ok(rest) => format!("{}{}", stage, rest),
-                Err(_e) => {
-                  let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
-                  match std::str::from_utf8(&[*first, *second, third, fourth]) {
-                    Ok(rest) => format!("{}{}", stage, rest),
-                    Err(e) => {
-                      return Err(Error::new(
-                        ErrorKind::Other,
-                        format!("Failed utf8 decode after third byte: {:?}", e),
-                      ));
-                    }
-                  }
-                }
-              }
-            }
-            [single] => {
-              let mut bytes = reader.bytes();
-              let second = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
-              match std::str::from_utf8(&[*single, second]) {
-                Ok(rest) => format!("{}{}", stage, rest),
-                Err(e) => match e.error_len() {
-                  None => {
-                    let third = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
-
-                    match std::str::from_utf8(&[*single, second, third]) {
-                      Ok(rest) => format!("{}{}", stage, rest),
-                      Err(_e) => {
-                        let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
-                        match std::str::from_utf8(&[*single, second, third, fourth]) {
-                          Ok(rest) => format!("{}{}", stage, rest),
-                          Err(e) => {
-                            return Err(Error::new(
-                              ErrorKind::Other,
-                              format!("Failed utf8 decode after third byte: {:?}", e),
-                            ));
-                          }
-                        }
-                      }
-                    }
-                  }
-                  Some(_) => {
-                    return Err(Error::new(
-                      ErrorKind::InvalidData,
-                      "Failed pulling second byte for utf-8 sequence",
-                    ));
-                  }
-                },
-              }
-            }
-            _ => {
-              return Err(Error::new(
-                ErrorKind::InvalidData,
-                "Unable to determine correction for utf-8 boundary",
-              ))
-            }
-          }
-        }
-        Some(_) => {
-          return Err(Error::new(
-            ErrorKind::InvalidData,
-            format!("Invalid utf-8 sequence: {:?}", e),
-          ));
-        }
-      },
-    };
+    let chunk = fill_utf8(&buf[0..size], &mut reader).await?;
 
     let mut chars = chunk.chars();
     let lc = headers.len();
