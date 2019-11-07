@@ -85,7 +85,7 @@ impl Head {
         Err(e) => {
           return Err(Error::new(
             ErrorKind::InvalidData,
-            format!("Invalid content length: {:?}", e),
+            format!("Invalid content length ('{}'): {:?}", value, e),
           ))
         }
       }
@@ -287,6 +287,10 @@ where
       }
       // terminal from previous '\r'
       (Capacity::Three, Some('\n'), Some('\r'), Some('\n'), _) => break,
+      (Capacity::Three, Some('\n'), Some(one), Some(two), None) => {
+        headers.push(format!("{}{}", one, two));
+        marker.capacity = Capacity::Four;
+      }
 
       // any char followed by '\r\n\r' - queue up single read
       (_, Some(one), Some('\r'), Some('\n'), Some('\r')) => {
@@ -299,27 +303,20 @@ where
 
       // any chars followed by '\r\n' - queue up double read
       (_, Some(one), Some(two), Some('\r'), Some('\n')) => {
+        let mem = format!("{}{}", one, two);
         match headers.last_mut() {
-          Some(header) => {
-            header.reserve(2);
-            header.push(one);
-            header.push(two);
-          }
-          None => headers.push([one, two].iter().collect::<String>()),
+          Some(header) => header.push_str(mem.as_str()),
+          None => headers.push(mem),
         }
         marker.capacity = Capacity::Two;
       }
 
       // any chars followed by '\r' - queue up triple read
       (_, Some(one), Some(two), Some(three), Some('\r')) => {
+        let mem = format!("{}{}{}", one, two, three);
         match headers.last_mut() {
-          Some(header) => {
-            header.reserve(3);
-            header.push(one);
-            header.push(two);
-            header.push(three);
-          }
-          None => headers.push([one, two, three].iter().collect::<String>()),
+          Some(header) => header.push_str(mem.as_str()),
+          None => headers.push(mem),
         }
         marker.capacity = Capacity::Three;
       }
@@ -335,13 +332,10 @@ where
       }
 
       (_, Some(one), Some(two), Some('\r'), None) => {
+        let mem = format!("{}{}", one, two);
         match headers.last_mut() {
-          Some(header) => {
-            header.reserve(2);
-            header.push(one);
-            header.push(two);
-          }
-          None => headers.push([one, two].iter().collect::<String>()),
+          Some(header) => header.push_str(mem.as_str()),
+          None => headers.push(mem),
         }
         marker.capacity = Capacity::Three;
       }
@@ -363,46 +357,32 @@ where
       }
 
       (_, Some(one), Some(two), Some(three), Some(four)) => {
+        let mem = format!("{}{}{}{}", one, two, three, four);
         match headers.last_mut() {
-          Some(header) => {
-            header.reserve(4);
-            header.push(one);
-            header.push(two);
-            header.push(three);
-            header.push(four);
-          }
-          None => headers.push([one, two, three, four].iter().collect::<String>()),
+          Some(header) => header.push_str(mem.as_str()),
+          None => headers.push(mem),
         }
         marker.capacity = Capacity::Four;
       }
       (_, Some(one), Some(two), Some(three), None) => {
+        let mem = format!("{}{}{}", one, two, three);
         match headers.last_mut() {
-          Some(header) => {
-            header.reserve(3);
-            header.push(one);
-            header.push(two);
-            header.push(three);
-          }
-          None => headers.push([one, two, three].iter().collect::<String>()),
+          Some(header) => header.push_str(mem.as_str()),
+          None => headers.push(mem),
         }
         marker.capacity = Capacity::Four;
       }
       (_, Some(one), Some(two), None, None) => {
+        let mem = format!("{}{}", one, two);
         match headers.last_mut() {
-          Some(header) => {
-            header.reserve(2);
-            header.push(one);
-            header.push(two);
-          }
-          None => headers.push([one, two].iter().collect::<String>()),
+          Some(header) => header.push_str(mem.as_str()),
+          None => headers.push(mem),
         }
         marker.capacity = Capacity::Four;
       }
       (_, Some(one), None, None, None) => {
         match headers.last_mut() {
-          Some(header) => {
-            header.push(one);
-          }
+          Some(header) => header.push(one),
           None => headers.push(format!("{}", one)),
         }
         marker.capacity = Capacity::Four;

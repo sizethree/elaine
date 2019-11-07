@@ -14,6 +14,13 @@ fn buffer_from(source: &[u8]) -> AsyncBuffer {
 }
 
 #[test]
+fn test_with_auth() {
+  let mut buff = AsyncBuffer::new("POST / HTTP/1.1\r\nHost: 0.0.0.0:8080\r\n\r\n");
+  let result = block_on(async { recognize(&mut buff).await });
+  println!("result: {:?}", result);
+}
+
+#[test]
 fn test_rere_two() {
   let tail: &[u8] = &[0x61, 0x61, 0x61, 0xC9, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
   let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
