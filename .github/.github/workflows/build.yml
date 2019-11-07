@@ -20,7 +20,7 @@ jobs:
       - name: use-nightly
         run: rustup default nightly
       - name: test
-        run: cargo test --quiet
+        run: cargo test
       - name: bench
         run: cargo bench --quiet
 
