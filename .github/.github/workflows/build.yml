@@ -1,0 +1,30 @@
+name: gh.build
+on: [push]
+jobs:
+  beta:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: install-beta
+        run: rustup toolchain install beta
+      - name: use-beta
+        run: rustup default beta
+      - name: build
+        run: cargo build
+      - name: test
+        run: cargo test
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: install-nightly
+        run: rustup toolchain install nightly
+      - name: use-nightly
+        run: rustup default nightly
+      - name: build
+        run: cargo build
+      - name: test
+        run: cargo test --quiet
+      - name: bench
+        run: cargo bench --quiet
+
