@@ -21,8 +21,6 @@
 //!   Ok(())
 //! }
 //! ```
-//!
-//! [blink(1)]: https://blink1.thingm.com
 extern crate async_std;
 
 use async_std::io::Read;
