@@ -25,27 +25,39 @@ pub struct RequestLine {
 
 #[derive(Debug, Default)]
 pub struct Head {
-  headers: Vec<Header>,
-  req: Option<RequestLine>,
+  _headers: Vec<Header>,
+  _req: Option<RequestLine>,
   _len: Option<usize>,
   _auth: Option<String>,
 }
 
 impl Head {
   pub fn path(&self) -> Option<String> {
-    self.req.as_ref().map(|r| r.path.clone())
+    self._req.as_ref().map(|r| r.path.clone())
   }
 
   pub fn version(&self) -> Option<String> {
-    self.req.as_ref().map(|r| r.version.clone())
+    self._req.as_ref().map(|r| r.version.clone())
   }
 
   pub fn method(&self) -> Option<String> {
-    self.req.as_ref().map(|r| r.method.clone())
+    self._req.as_ref().map(|r| r.method.clone())
   }
 
   pub fn len(&self) -> Option<usize> {
     self._len
+  }
+
+  fn add_header(&mut self, header: Header) {
+    let Header(key, value) = header;
+
+    if key == "Content-Length" {
+      if let Ok(value) = value.parse::<usize>() {
+        self._len = Some(value);
+      }
+    }
+
+    self._headers.push(Header(key, value));
   }
 }
 
@@ -63,6 +75,14 @@ impl std::fmt::Display for Head {
       self._len,
     )
   }
+}
+
+fn parse_header_line(input: String) -> Option<Header> {
+  let mut splits = input.splitn(2, ": ");
+  if let (Some(key), Some(value)) = (splits.next(), splits.next()) {
+    return Some(Header(key.to_string(), value.to_string()));
+  }
+  None
 }
 
 fn parse_request_line(input: String) -> Result<RequestLine, Error> {
@@ -107,6 +127,279 @@ impl Default for Marker {
       capacity: Capacity::Four,
     }
   }
+}
+
+pub async fn rere<R>(reader: &mut R) -> Result<Head, Error>
+where
+  R: Read + std::marker::Unpin,
+{
+  let mut marker = Marker::default();
+  let mut headers: Vec<String> = Vec::new();
+  let mut head = Head::default();
+
+  loop {
+    let mut buf: Vec<u8> = match &marker.capacity {
+      Capacity::Four => vec![0x13, 0x10, 0x13, 0x10],
+      Capacity::Three => vec![0x10, 0x13, 0x10],
+      Capacity::Two => vec![0x13, 0x10],
+      Capacity::One => vec![0x10],
+    };
+
+    let size = reader.read(&mut buf).await?;
+    let chunk = match std::str::from_utf8(&buf[0..size]) {
+      Ok(c) => String::from(c),
+      Err(e) => match e.error_len() {
+        None => {
+          let (valid, after_valid) = buf.split_at(e.valid_up_to());
+          let stage = std::str::from_utf8(valid).map_err(|e| Error::new(ErrorKind::InvalidData, format!("{:?}", e)))?;
+          match after_valid {
+            [first, second, third] => {
+              let mut bytes = reader.bytes();
+              let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+              match std::str::from_utf8(&[*first, *second, *third, fourth]) {
+                Ok(rest) => format!("{}{}", stage, rest),
+                Err(e) => {
+                  return Err(Error::new(
+                    ErrorKind::Other,
+                    format!("Failed utf8 decode after third byte: {:?}", e),
+                  ));
+                }
+              }
+            }
+            [first, second] => {
+              let mut bytes = reader.bytes();
+              let third = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+              match std::str::from_utf8(&[*first, *second, third]) {
+                Ok(rest) => format!("{}{}", stage, rest),
+                Err(_e) => {
+                  let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+                  match std::str::from_utf8(&[*first, *second, third, fourth]) {
+                    Ok(rest) => format!("{}{}", stage, rest),
+                    Err(e) => {
+                      return Err(Error::new(
+                        ErrorKind::Other,
+                        format!("Failed utf8 decode after third byte: {:?}", e),
+                      ));
+                    }
+                  }
+                }
+              }
+            }
+            [single] => {
+              let mut bytes = reader.bytes();
+              let second = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+              match std::str::from_utf8(&[*single, second]) {
+                Ok(rest) => format!("{}{}", stage, rest),
+                Err(e) => match e.error_len() {
+                  None => {
+                    let third = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+
+                    match std::str::from_utf8(&[*single, second, third]) {
+                      Ok(rest) => format!("{}{}", stage, rest),
+                      Err(_e) => {
+                        let fourth = bytes.next().await.ok_or(Error::from(ErrorKind::InvalidData))??;
+                        match std::str::from_utf8(&[*single, second, third, fourth]) {
+                          Ok(rest) => format!("{}{}", stage, rest),
+                          Err(e) => {
+                            return Err(Error::new(
+                              ErrorKind::Other,
+                              format!("Failed utf8 decode after third byte: {:?}", e),
+                            ));
+                          }
+                        }
+                      }
+                    }
+                  }
+                  Some(_) => {
+                    return Err(Error::new(
+                      ErrorKind::InvalidData,
+                      "Failed pulling second byte for utf-8 sequence",
+                    ));
+                  }
+                },
+              }
+            }
+            _ => {
+              return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Unable to determine correction for utf-8 boundary",
+              ))
+            }
+          }
+        }
+        Some(_) => {
+          return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("Invalid utf-8 sequence: {:?}", e),
+          ));
+        }
+      },
+    };
+
+    let mut chars = chunk.chars();
+    let lc = headers.len();
+
+    match (&marker.capacity, chars.next(), chars.next(), chars.next(), chars.next()) {
+      // clean terminal
+      (_, Some('\r'), Some('\n'), Some('\r'), Some('\n')) => break,
+      // terminal from previous '\r\n\r'
+      (Capacity::One, Some('\n'), _, _, _) => break,
+      // terminal from previous '\r\n'
+      (Capacity::Two, Some('\r'), Some('\n'), _, _) => break,
+      // non-terminal: had a cr lf but now working with something else
+      (Capacity::Two, Some(one), Some(two), _, _) => {
+        headers.push([one, two].iter().collect::<String>());
+        marker.capacity = Capacity::Four;
+      }
+      // terminal from previous '\r'
+      (Capacity::Three, Some('\n'), Some('\r'), Some('\n'), _) => break,
+
+      // any char followed by '\r\n\r' - queue up single read
+      (_, Some(one), Some('\r'), Some('\n'), Some('\r')) => {
+        match headers.last_mut() {
+          Some(header) => header.push(one),
+          None => headers.push(one.to_string()),
+        }
+        marker.capacity = Capacity::One;
+      }
+
+      // any chars followed by '\r\n' - queue up double read
+      (_, Some(one), Some(two), Some('\r'), Some('\n')) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.reserve(2);
+            header.push(one);
+            header.push(two);
+          }
+          None => headers.push([one, two].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Two;
+      }
+
+      // any chars followed by '\r' - queue up triple read
+      (_, Some(one), Some(two), Some(three), Some('\r')) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.reserve(3);
+            header.push(one);
+            header.push(two);
+            header.push(three);
+          }
+          None => headers.push([one, two, three].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Three;
+      }
+
+      (_, Some(one), Some('\r'), None, None) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.push(one);
+          }
+          None => headers.push([one].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Three;
+      }
+
+      (_, Some(one), Some(two), Some('\r'), None) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.reserve(2);
+            header.push(one);
+            header.push(two);
+          }
+          None => headers.push([one, two].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Three;
+      }
+
+      (_, Some('\r'), Some('\n'), Some(one), Some(two)) => {
+        headers.push([one, two].iter().collect::<String>());
+        marker.capacity = Capacity::Four;
+      }
+
+      (_, Some(one), Some('\r'), Some('\n'), Some(two)) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.push(one);
+          }
+          None => headers.push(one.to_string()),
+        }
+        headers.push(two.to_string());
+        marker.capacity = Capacity::Four;
+      }
+
+      (_, Some(one), Some(two), Some(three), Some(four)) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.reserve(4);
+            header.push(one);
+            header.push(two);
+            header.push(three);
+            header.push(four);
+          }
+          None => headers.push([one, two, three, four].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Four;
+      }
+      (_, Some(one), Some(two), Some(three), None) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.reserve(3);
+            header.push(one);
+            header.push(two);
+            header.push(three);
+          }
+          None => headers.push([one, two, three].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Four;
+      }
+      (_, Some(one), Some(two), None, None) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.reserve(2);
+            header.push(one);
+            header.push(two);
+          }
+          None => headers.push([one, two].iter().collect::<String>()),
+        }
+        marker.capacity = Capacity::Four;
+      }
+      (_, Some(one), None, None, None) => {
+        match headers.last_mut() {
+          Some(header) => {
+            header.push(one);
+          }
+          None => headers.push(format!("{}", one)),
+        }
+        marker.capacity = Capacity::Four;
+      }
+      _ => return Err(Error::new(ErrorKind::Other, "Invalid sequence")),
+    }
+
+    if headers.len() >= 2 && lc != headers.len() {
+      if let (None, Some(line)) = (&head._req, headers.get(0)) {
+        head._req = Some(parse_request_line(line.to_string())?)
+      }
+
+      if headers.len() == 3 {
+        let temp = headers.pop().unwrap_or_default();
+
+        if let Some(complete) = headers.pop().and_then(parse_header_line) {
+          head.add_header(complete);
+        }
+
+        headers.push(temp);
+      }
+    }
+  }
+
+  if headers.len() == 2 {
+    if let Some(last) = headers.pop().and_then(parse_header_line) {
+      head.add_header(last);
+    }
+  }
+
+  Ok(head)
 }
 
 pub async fn recog<R>(reader: &mut R) -> Result<VecDeque<String>, Error>
@@ -395,15 +688,15 @@ where
         count: _,
       })) => {
         position = position + 1;
-        match head.req {
+        match head._req {
           None => {
-            let req = head.headers.pop().map_or_else(
+            let req = head._headers.pop().map_or_else(
               || Err(Error::new(ErrorKind::Other, "Request line not provided")),
               |Header(v, _)| parse_request_line(v).map(|v| Some(v)),
             )?;
-            head = Head { req, ..head };
+            head = Head { _req: req, ..head };
           }
-          Some(_) => match head.headers.last() {
+          Some(_) => match head._headers.last() {
             Some(Header(key, value)) if key.starts_with("Content-Length: ") => {
               let len = Some(
                 value
@@ -411,10 +704,10 @@ where
                   .map_err(|e| normalize_err(e, "Invalid content length"))?,
               );
               head = Head { _len: len, ..head };
-              head.headers.push(Header(String::from(""), String::from("")));
+              head._headers.push(Header(String::from(""), String::from("")));
             }
             _ => {
-              head.headers.push(Header(String::from(""), String::from("")));
+              head._headers.push(Header(String::from(""), String::from("")));
             }
           },
         }
@@ -427,9 +720,9 @@ where
         current: byte,
       })) => {
         position = position + 1;
-        match head.headers.last_mut() {
+        match head._headers.last_mut() {
           Some(Header(start, end)) => {
-            if let Some(_) = head.req {
+            if let Some(_) = head._req {
               if start.ends_with(": ") {
                 end.push(byte as char);
                 continue;
@@ -450,7 +743,7 @@ where
           }
           None => {
             let key = String::from_utf8([byte].to_vec()).map_err(|e| normalize_err(e, "Invalid utf8 byte found"))?;
-            head.headers.push(Header(key, String::from("")));
+            head._headers.push(Header(key, String::from("")));
             continue;
           }
         }

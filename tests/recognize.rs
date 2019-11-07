@@ -3,14 +3,48 @@
 mod helpers;
 
 use async_std::task::block_on;
-use elaine::{recog, recognize};
+use elaine::{recog, recognize, rere};
 use helpers::AsyncBuffer;
 
 #[test]
-fn test_recog_utf8_boundary_dangle_one() {
-  let mut buf: &[u8] = &[0x61, 0x61, 0x61, 0xC9, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
-  let result = block_on(async { recog(&mut buf).await });
-  assert_eq!(result.unwrap(), vec!["aaaɒ"]);
+fn test_rere_two() {
+  let tail: &[u8] = &[0x61, 0x61, 0x61, 0xC9, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
+  let result = block_on(async { rere(&mut full).await });
+  assert!(result.is_ok())
+}
+
+#[test]
+fn test_rere_three() {
+  let tail: &[u8] = &[0x61, 0x61, 0xE0, 0xA1, 0x98, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
+  let result = block_on(async { rere(&mut full).await });
+  assert!(result.is_ok())
+}
+
+#[test]
+fn test_rere_full() {
+  let tail: &[u8] = &[0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
+  let result = block_on(async { rere(&mut full).await });
+  assert!(result.is_ok())
+}
+
+#[test]
+fn test_rere_four() {
+  let tail: &[u8] = &[0x61, 0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
+  let mut full = AsyncBuffer::new(format!("GET /first HTTP1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
+  let result = block_on(async { rere(&mut full).await });
+  assert!(result.is_ok())
+}
+
+#[test]
+fn test_rere_after() {
+  let mut full = AsyncBuffer::new("GET /foo HTTP1.1\r\nHost: 8080\r\nContent-Length: 3\r\n\r\nhey");
+  let result = block_on(async { rere(&mut full).await });
+  assert!(result.is_ok());
+  assert_eq!(format!("{}", full), format!("{}", AsyncBuffer::new("hey")));
+  println!("result: {:?}", result);
 }
 
 #[test]

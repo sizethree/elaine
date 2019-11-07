@@ -2,11 +2,12 @@
 
 use async_std::io::Read;
 use async_std::task::{Context, Poll};
+use std::collections::VecDeque;
 use std::io::Error;
 use std::pin::Pin;
 
 pub struct AsyncBuffer {
-  source: String,
+  source: VecDeque<u8>,
 }
 
 impl AsyncBuffer {
@@ -14,13 +15,19 @@ impl AsyncBuffer {
   where
     S: Into<String>,
   {
-    AsyncBuffer { source: inner.into() }
+    AsyncBuffer {
+      source: VecDeque::from(inner.into().as_bytes().to_vec()),
+    }
   }
 }
 
 impl std::fmt::Display for AsyncBuffer {
   fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-    write!(formatter, "contents: {}", self.source)
+    write!(
+      formatter,
+      "contents: {:?}",
+      String::from_utf8(self.source.clone().into())
+    )
   }
 }
 
@@ -29,18 +36,9 @@ impl Read for AsyncBuffer {
     let mut written = 0;
 
     for b in &mut *dest {
-      let (start, end) = self.source.split_at(1);
-
-      if start.len() == 0 {
-        break;
-      }
-
-      let byte = start.bytes().nth(0);
-
-      match byte {
+      match self.source.pop_front() {
         Some(byte) => {
-          self.source = String::from(end);
-          *b = byte as u8;
+          *b = byte;
           written += 1;
         }
         None => break,

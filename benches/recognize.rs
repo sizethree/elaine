@@ -15,7 +15,7 @@ async fn run(mut buffer: AsyncBuffer) -> Result<Head, std::io::Error> {
   recognize(&mut buffer).await
 }
 
-async fn r(mut buffer: AsyncBuffer) -> Result<Vec<String>, std::io::Error> {
+async fn r(mut buffer: AsyncBuffer) -> Result<std::collections::VecDeque<String>, std::io::Error> {
   recog(&mut buffer).await
 }
 
