@@ -63,12 +63,17 @@ impl Head {
   where
     S: std::fmt::Display,
   {
-    for Header(key, value) in self._headers.iter() {
-      if *key == format!("{}", target) {
-        return Some(value.to_string());
-      }
-    }
-    None
+    self
+      ._headers
+      .iter()
+      .filter_map(|Header(key, value)| {
+        if key.as_str() == format!("{}", target).as_str() {
+          Some(value.clone())
+        } else {
+          None
+        }
+      })
+      .nth(0)
   }
 
   fn add_header(&mut self, header: Header) -> Result<(), Error> {
