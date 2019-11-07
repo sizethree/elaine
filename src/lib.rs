@@ -273,17 +273,6 @@ where
     let mut chars = chunk.chars();
     let lc = headers.len();
 
-    {
-      let mut chars = chunk.chars();
-      println!(
-        "line: {:?} {:?} {:?} {:?}",
-        chars.next(),
-        chars.next(),
-        chars.next(),
-        chars.next()
-      );
-    }
-
     match (&marker.capacity, chars.next(), chars.next(), chars.next(), chars.next()) {
       // clean terminal
       (_, Some('\r'), Some('\n'), Some('\r'), Some('\n')) => break,

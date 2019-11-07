@@ -1,7 +1,7 @@
 use async_std::io::{Read, Write};
-use async_std::net::TcpListener;
+use async_std::net::{TcpListener, TcpStream};
 use async_std::prelude::*;
-use async_std::task::block_on;
+use async_std::task::{block_on, spawn};
 use elaine::{recognize, Head};
 use std::error::Error;
 
@@ -18,13 +18,21 @@ where
       body.push(byte);
     }
 
-    println!("read body: {:?}", String::from_utf8(body));
     stream.write(b"HTTP/1.1 200 OK\r\n\r\n").await?;
     return Ok(None);
   }
 
   stream.write(b"HTTP/1.1 200 OK\r\n\r\n").await?;
   Ok(None)
+}
+
+async fn handle(mut stream: TcpStream) -> Result<(), std::io::Error> {
+  let head = recognize(&mut stream).await?;
+  if let Err(e) = route(head, &mut stream).await {
+    println!("unable to route: {:?}", e);
+  }
+  drop(stream);
+  Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -36,12 +44,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
       match listener.incoming().next().await {
-        Some(Ok(mut stream)) => {
-          let head = recognize(&mut stream).await?;
-          println!("responding to {}", head);
-          route(head, &mut stream).await?;
-          println!("done");
-          drop(stream);
+        Some(Ok(stream)) => {
+          spawn(async move { handle(stream).await });
         }
         _ => continue,
       }
