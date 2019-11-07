@@ -3,7 +3,12 @@ name = "elaine"
 version = "0.1.0"
 authors = ["Danny Hadley <dadleyy@gmail.com>"]
 edition = "2018"
+license = "MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+homepage = "https://github.com/sizethree/elaine"
+repository = "https://github.com/sizethree/elaine.git"
+description = "Async http head reader"
+keywords = ["http"]
 
 [dependencies]
+async-std = "^0.99"
