@@ -18,7 +18,12 @@ where
       body.push(byte);
     }
 
-    stream.write(b"HTTP/1.1 200 OK\r\n\r\n").await?;
+    let res = format!(
+      "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}\r\n",
+      len + 2,
+      String::from_utf8(body).unwrap()
+    );
+    stream.write(res.as_bytes()).await?;
     return Ok(None);
   }
 

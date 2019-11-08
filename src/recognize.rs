@@ -135,7 +135,7 @@ where
 /// [rfc-1945]: https://tools.ietf.org/html/rfc1945#section-4.1
 /// [req-line]: https://tools.ietf.org/html/rfc1945#section-5.1
 /// [read]: https://tools.ietf.org/html/rfc1945#section-5.1
-pub async fn recognize<R>(mut reader: &mut R) -> Result<Head, Error>
+pub async fn recognize<R>(mut reader: R) -> Result<Head, Error>
 where
   R: Read + std::marker::Unpin,
 {

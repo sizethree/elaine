@@ -2,6 +2,7 @@
 
 mod helpers;
 
+use async_std::prelude::*;
 use async_std::task::block_on;
 use elaine::{recognize, RequestMethod};
 use helpers::AsyncBuffer;
@@ -62,7 +63,6 @@ fn test_recognize_full() {
   let tail: &[u8] = &[0xF0, 0x90, 0x86, 0x92, 0x0d, 0x0a, 0x0d, 0x0a];
   let mut full = AsyncBuffer::new(format!("GET /first HTTP/1.1\r\n{}", std::str::from_utf8(tail).unwrap()));
   let result = block_on(async { recognize(&mut full).await });
-  println!("{:?}", result);
   assert!(result.is_ok())
 }
 
@@ -189,4 +189,15 @@ fn recognize_fail_bad_start() {
   let mut buffer = AsyncBuffer::new("\r\n");
   let result = block_on(async { recognize(&mut buffer).await });
   assert!(result.is_err());
+}
+
+#[test]
+fn recognize_and_read_after() {
+  let mut buffer = AsyncBuffer::new("POST /create HTTP/1.1\r\nContent-Length: 3\r\n\r\nhey");
+  let result = block_on(async { recognize(&mut buffer).await });
+  assert!(result.is_ok());
+  let mut rem: Vec<u8> = vec![0x00, 0x00, 0x00];
+  let result = block_on(async { buffer.read(&mut rem).await });
+  assert_eq!(result.unwrap(), 3);
+  assert_eq!(String::from_utf8(rem).unwrap(), "hey");
 }
