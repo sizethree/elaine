@@ -27,6 +27,28 @@ use async_std::io::Read;
 use async_std::prelude::*;
 use std::io::{Error, ErrorKind};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RequestVersion {
+  RFC2616,
+  RFC1945,
+}
+
+impl RequestVersion {
+  pub fn parse<S>(input: S) -> Result<Self, Error>
+  where
+    S: std::fmt::Display,
+  {
+    match format!("{}", input).as_str() {
+      "HTTP/1.1" => Ok(RequestVersion::RFC2616),
+      "HTTP/1.0" => Ok(RequestVersion::RFC1945),
+      _ => Err(Error::new(
+        ErrorKind::InvalidData,
+        format!("Unmatched http version: {}", input),
+      )),
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RequestMethod {
   CONNECT,
@@ -44,7 +66,7 @@ pub enum RequestMethod {
 pub struct RequestLine {
   method: RequestMethod,
   path: String,
-  version: String,
+  version: RequestVersion,
 }
 
 #[derive(Debug, Default)]
@@ -60,8 +82,8 @@ impl Head {
     self._req.as_ref().map(|r| r.path.clone())
   }
 
-  pub fn version(&self) -> Option<String> {
-    self._req.as_ref().map(|r| r.version.clone())
+  pub fn version(&self) -> Option<RequestVersion> {
+    self._req.as_ref().map(|r| r.version)
   }
 
   pub fn method(&self) -> Option<RequestMethod> {
@@ -116,10 +138,10 @@ impl std::fmt::Display for Head {
   fn fmt(&self, formatter: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
     write!(
       formatter,
-      "{:?} {} {}\r\nContent-Length: {:?}\r\n\r\n",
+      "{:?} {} {:?}\r\nContent-Length: {:?}\r\n\r\n",
       self.method(),
       self.path().unwrap_or(String::from("<UNKNOWN>")),
-      self.version().unwrap_or(String::from("<UNKNOWN>")),
+      self.version(),
       self._len,
     )
   }
@@ -136,7 +158,7 @@ fn parse_header_line(input: String) -> Option<Header> {
 fn parse_request_line(input: String) -> Result<RequestLine, Error> {
   let mut splits = input.splitn(3, ' ');
   match (splits.next(), splits.next(), splits.next()) {
-    (Some(first), Some(uri), Some(version)) => {
+    (Some(first), Some(uri), Some(tail)) => {
       let method = match first {
         "CONNECT" => RequestMethod::CONNECT,
         "DELETE" => RequestMethod::DELETE,
@@ -155,10 +177,12 @@ fn parse_request_line(input: String) -> Result<RequestLine, Error> {
         }
       };
 
+      let version = RequestVersion::parse(tail)?;
+
       Ok(RequestLine {
         method,
+        version,
         path: String::from(uri),
-        version: String::from(version),
       })
     }
     _ => Err(Error::new(
@@ -320,6 +344,10 @@ where
       }
       // terminal from previous '\r'
       (Capacity::Three, Some('\n'), Some('\r'), Some('\n'), _) => break,
+      (Capacity::Three, Some('\n'), Some(one), None, None) => {
+        headers.push(format!("{}", one));
+        marker.capacity = Capacity::Four;
+      }
       (Capacity::Three, Some('\n'), Some(one), Some(two), None) => {
         headers.push(format!("{}{}", one, two));
         marker.capacity = Capacity::Four;
