@@ -5,6 +5,7 @@ authors = ["Danny Hadley <dadleyy@gmail.com>"]
 edition = "2018"
 license = "MIT"
 
+readme = "README.md"
 homepage = "https://github.com/sizethree/elaine"
 repository = "https://github.com/sizethree/elaine.git"
 description = "Async http head reader"
