@@ -18,9 +18,9 @@ guaruntee that it will _never_ over-read bytes from a reader, again at the poten
 
 ### On Simplictity
 
-This crate does not include the [`http`][http-crate] in it's dependencies; though well-maintained and useful as it is,
-it would introduce a super set of functionality that is not required for this implementation. This decision is not 
-in any way meant to discourage other developers from using that library.
+This crate does not include the [`http`][http-crate] crate in it's dependencies; though well-maintained and useful as
+it is, it would introduce a super set of functionality that is not required for this implementation. This decision is
+not in any way meant to discourage other developers from using that library.
 
 ## Example
 
@@ -63,4 +63,4 @@ See [CONTRIBUTING](/CONTRIBUTING.md).
 [elaine]: https://user-images.githubusercontent.com/1545348/68368941-1cee4e80-0107-11ea-8e87-47cb29cf8e15.gif
 [`readers`]: https://docs.rs/async-std/0.99.12/async_std/io/trait.Read.html
 [http-crate]: https://crates.io/crates/http
-[recognize]: https://docs.rs/elaine/0.1.1/elaine/fn.recognize.html
+[recognize]: https://docs.rs/elaine/latest/elaine/fn.recognize.html
