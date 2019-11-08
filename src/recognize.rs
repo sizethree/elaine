@@ -26,11 +26,11 @@ impl Default for Marker {
 }
 
 #[derive(Debug)]
-struct Stack(Box<Option<String>>, Box<Option<String>>);
+struct Stack(Option<String>, Option<String>);
 
 impl std::default::Default for Stack {
   fn default() -> Stack {
-    Stack(Box::new(None), Box::new(None))
+    Stack(None, None)
   }
 }
 
@@ -39,7 +39,7 @@ impl Stack {
     if self.1.is_some() {
       self.0 = self.1.to_owned()
     }
-    self.1 = Box::new(Some(content))
+    self.1 = Some(content);
   }
 
   fn last_mut(&mut self) -> Option<&mut String> {
@@ -64,7 +64,7 @@ impl Stack {
 
     if let Some(value) = self.0.as_mut() {
       let out = value.to_owned();
-      self.0 = Box::new(None);
+      self.0 = None;
       return Some(out);
     }
 
