@@ -3,7 +3,7 @@
 mod helpers;
 
 use async_std::task::block_on;
-use elaine::recognize;
+use elaine::{recognize, RequestMethod};
 use helpers::AsyncBuffer;
 
 fn buffer_from(source: &[u8]) -> AsyncBuffer {
@@ -14,10 +14,17 @@ fn buffer_from(source: &[u8]) -> AsyncBuffer {
 }
 
 #[test]
+fn test_invalid_header_line() {
+  let mut buff = AsyncBuffer::new("FOOBAR\r\nHost: 0.0.0.0:8080\r\n\r\n");
+  let result = block_on(async { recognize(&mut buff).await });
+  assert!(result.is_err());
+}
+
+#[test]
 fn test_with_auth() {
   let mut buff = AsyncBuffer::new("POST / HTTP/1.1\r\nHost: 0.0.0.0:8080\r\n\r\n");
   let result = block_on(async { recognize(&mut buff).await });
-  println!("result: {:?}", result);
+  assert!(result.is_ok());
 }
 
 #[test]
@@ -132,7 +139,7 @@ fn test_recog_http_example() {
     "GET ", "/hel", "lo-w", "orld", " HTT", "P/1.", "1\r\nC", "onte", "nt-L", "engt", "h: 3", "\r\n\r\n"
   ));
   let result = block_on(async { recognize(&mut buffer).await });
-  assert_eq!(result.unwrap().method(), Some("GET".to_string()));
+  assert_eq!(result.unwrap().method(), Some(RequestMethod::GET));
 }
 
 #[test]
@@ -141,7 +148,7 @@ fn recognize_valid_without_body() {
   let result = block_on(async { recognize(&mut buffer).await });
   assert!(result.is_ok());
   let head = result.unwrap();
-  assert_eq!(head.method(), Some(String::from("GET")));
+  assert_eq!(head.method(), Some(RequestMethod::GET));
   assert_eq!(head.len(), None);
 }
 
@@ -151,7 +158,7 @@ fn recognize_valid_with_len() {
   let result = block_on(async { recognize(&mut buffer).await });
   assert!(result.is_ok());
   let head = result.unwrap();
-  assert_eq!(head.method(), Some(String::from("GET")));
+  assert_eq!(head.method(), Some(RequestMethod::GET));
   assert_eq!(head.len(), Some(10));
 }
 

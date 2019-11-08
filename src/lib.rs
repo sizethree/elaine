@@ -7,14 +7,14 @@
 //! use std::boxed::Box;
 //! use std::error::Error;
 //!
-//! use elaine::recognize;
+//! use elaine::{recognize, RequestMethod};
 //! use async_std::task::block_on;
 //!
 //! fn main() -> Result<(), Box<dyn Error>> {
 //!   block_on(async {
 //!     let mut req: &[u8] = b"GET /elaine HTTP/1.1\r\nContent-Length: 3\r\n\r\nhey";
 //!     let result = recognize(&mut req).await.unwrap();
-//!     assert_eq!(result.method(), Some("GET".to_string()));
+//!     assert_eq!(result.method(), Some(RequestMethod::GET));
 //!     assert_eq!(result.len(), Some(3));
 //!     assert_eq!(std::str::from_utf8(req), Ok("hey"));
 //!   });
@@ -27,9 +27,22 @@ use async_std::io::Read;
 use async_std::prelude::*;
 use std::io::{Error, ErrorKind};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum RequestMethod {
+  CONNECT,
+  DELETE,
+  GET,
+  HEAD,
+  OPTIONS,
+  POST,
+  PUT,
+  PATCH,
+  TRACE,
+}
+
+#[derive(Debug)]
 pub struct RequestLine {
-  method: String,
+  method: RequestMethod,
   path: String,
   version: String,
 }
@@ -51,7 +64,7 @@ impl Head {
     self._req.as_ref().map(|r| r.version.clone())
   }
 
-  pub fn method(&self) -> Option<String> {
+  pub fn method(&self) -> Option<RequestMethod> {
     self._req.as_ref().map(|r| r.method.clone())
   }
 
@@ -103,8 +116,8 @@ impl std::fmt::Display for Head {
   fn fmt(&self, formatter: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
     write!(
       formatter,
-      "{} {} {}\r\nContent-Length: {:?}\r\n\r\n",
-      self.method().unwrap_or(String::from("<UNKNOWN>")),
+      "{:?} {} {}\r\nContent-Length: {:?}\r\n\r\n",
+      self.method(),
       self.path().unwrap_or(String::from("<UNKNOWN>")),
       self.version().unwrap_or(String::from("<UNKNOWN>")),
       self._len,
@@ -123,11 +136,31 @@ fn parse_header_line(input: String) -> Option<Header> {
 fn parse_request_line(input: String) -> Result<RequestLine, Error> {
   let mut splits = input.splitn(3, ' ');
   match (splits.next(), splits.next(), splits.next()) {
-    (Some(method), Some(uri), Some(version)) => Ok(RequestLine {
-      method: String::from(method),
-      path: String::from(uri),
-      version: String::from(version),
-    }),
+    (Some(first), Some(uri), Some(version)) => {
+      let method = match first {
+        "CONNECT" => RequestMethod::CONNECT,
+        "DELETE" => RequestMethod::DELETE,
+        "GET" => RequestMethod::GET,
+        "HEAD" => RequestMethod::HEAD,
+        "OPTIONS" => RequestMethod::OPTIONS,
+        "POST" => RequestMethod::POST,
+        "PUT" => RequestMethod::PUT,
+        "PATCH" => RequestMethod::PATCH,
+        "TRACE" => RequestMethod::TRACE,
+        _ => {
+          return Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("Unable to parse request method {}", first),
+          ))
+        }
+      };
+
+      Ok(RequestLine {
+        method,
+        path: String::from(uri),
+        version: String::from(version),
+      })
+    }
     _ => Err(Error::new(
       ErrorKind::InvalidData,
       format!("Invalid request line: '{}'", input),
