@@ -11,21 +11,20 @@ for async-std readers.
 use std::boxed::Box;
 use std::error::Error;
 
-use elaine::recognize;
+use elaine::{recognize, RequestMethod};
 use async_std::task::block_on;
 
 fn main() -> Result<(), Box<dyn Error>> {
   block_on(async {
     let mut req: &[u8] = b"GET /elaine HTTP/1.1\r\nContent-Length: 3\r\n\r\nhey";
     let result = recognize(&mut req).await.unwrap();
-    assert_eq!(result.method(), Some("GET".to_string()));
+    assert_eq!(result.method(), Some(RequestMethod::GET));
     assert_eq!(result.len(), Some(3));
     assert_eq!(std::str::from_utf8(req), Ok("hey"));
   });
   Ok(())
 }
 ```
-
 
 | elaine |
 | --- |
