@@ -25,6 +25,53 @@ impl Default for Marker {
   }
 }
 
+#[derive(Debug)]
+struct Stack(Box<Option<String>>, Box<Option<String>>);
+
+impl std::default::Default for Stack {
+  fn default() -> Stack {
+    Stack(Box::new(None), Box::new(None))
+  }
+}
+
+impl Stack {
+  fn push(&mut self, content: String) {
+    if self.1.is_some() {
+      self.0 = self.1.to_owned()
+    }
+    self.1 = Box::new(Some(content))
+  }
+
+  fn last_mut(&mut self) -> Option<&mut String> {
+    if let Some(value) = self.1.as_mut() {
+      return Some(value);
+    }
+
+    None
+  }
+
+  fn fin(mut self) -> Option<String> {
+    if let Some(value) = self.1.as_mut() {
+      return Some(value.to_owned());
+    }
+    None
+  }
+
+  fn pop(&mut self) -> Option<String> {
+    if self.0.is_none() {
+      return None;
+    }
+
+    if let Some(value) = self.0.as_mut() {
+      let out = value.to_owned();
+      self.0 = Box::new(None);
+      return Some(out);
+    }
+
+    None
+  }
+}
+
 async fn fill_utf8<R>(original: &[u8], reader: R) -> Result<String, Error>
 where
   R: Read + std::marker::Unpin,
@@ -140,7 +187,7 @@ where
   R: Read + std::marker::Unpin,
 {
   let mut marker = Marker::default();
-  let mut headers: Vec<String> = Vec::new();
+  let mut headers = Stack::default();
   let mut builder = Builder::new();
 
   loop {
@@ -155,7 +202,6 @@ where
     let chunk = fill_utf8(&buf[0..size], &mut reader).await?;
 
     let mut chars = chunk.chars();
-    let lc = headers.len();
 
     match (&marker.capacity, chars.next(), chars.next(), chars.next(), chars.next()) {
       // clean terminal
@@ -278,18 +324,12 @@ where
       _ => return Err(Error::new(ErrorKind::Other, "Invalid sequence")),
     }
 
-    if headers.len() == 2 && lc != headers.len() {
-      let temp = headers.pop().unwrap_or_default();
-
-      if let Some(complete) = headers.pop() {
-        builder.insert(complete)?;
-      }
-
-      headers.push(temp);
+    if let Some(complete) = headers.pop() {
+      builder.insert(complete)?;
     }
   }
 
-  if let Some(last) = headers.pop() {
+  if let Some(last) = headers.fin() {
     builder.insert(last)?;
   }
 
