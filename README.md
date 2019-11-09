@@ -14,7 +14,7 @@ while performance is appreciated, safety and simplicity take priority.
 
 The api provided by this crate will _never_ include `unsafe` code directly, including code that would otherwise
 improve the performance of the libary. In addition, the main export - [`recognize`][recognize] - provides the
-guaruntee that it will _never_ over-read bytes from a reader, again at the potential loss of performance.
+guarantee that it will _never_ over-read bytes from a reader, again at the potential loss of performance.
 
 ### On Simplictity
 
