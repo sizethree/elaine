@@ -214,7 +214,7 @@ fn empty_buffer_error() {
       "{:?}",
       Error::new(
         ErrorKind::UnexpectedEof,
-        "Reader exhausted before any recognizable line was parsed."
+        "Reader exhausted before terminating HTTP head"
       )
     )
   );
@@ -242,7 +242,7 @@ fn invalid_termination() {
       "{:?}",
       Error::new(
         ErrorKind::UnexpectedEof,
-        "Reader exhausted with non-terminated HTTP head. Last header line attempt: 'bad-line'"
+        "Reader exhausted before terminating HTTP head (last read 'bad-line')"
       )
     )
   );

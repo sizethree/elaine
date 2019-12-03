@@ -157,10 +157,10 @@ where
 
 fn invalid_read<H>(mut stack: Stack) -> Result<H, Error> {
   let message = match stack.last_mut() {
-    Some(value) => format!(". Last read '{}'", value),
+    Some(value) => format!("Reader exhausted before terminating HTTP head (last read '{}')", value),
     None => String::from("Reader exhausted before terminating HTTP head"),
   };
-  Err(Error::new(ErrorKind::Other, message))
+  Err(Error::new(ErrorKind::UnexpectedEof, message))
 }
 
 /// Reads from the reader, consuming valid utf-8 charactes in 1-4 byte sized chunks, stopping
@@ -321,16 +321,7 @@ where
       (_, Some(_), None, Some(_), None) => return invalid_read(stack),
       (_, Some(_), None, None, Some(_)) => return invalid_read(stack),
       (_, Some(_), Some(_), None, Some(_)) => return invalid_read(stack),
-      (_, None, _, _, _) => {
-        let err = match stack.last_mut() {
-          Some(partial) => format!(
-            "Reader exhausted with non-terminated HTTP head. Last header line attempt: '{}'",
-            partial
-          ),
-          None => String::from("Reader exhausted before any recognizable line was parsed."),
-        };
-        return Err(Error::new(ErrorKind::UnexpectedEof, err));
-      }
+      (_, None, _, _, _) => return invalid_read(stack),
     }
 
     if let Some(complete) = stack.pop() {
