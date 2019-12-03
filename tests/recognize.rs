@@ -6,6 +6,7 @@ use async_std::prelude::*;
 use async_std::task::block_on;
 use elaine::{recognize, RequestMethod};
 use helpers::AsyncBuffer;
+use std::io::{Error, ErrorKind};
 
 fn buffer_from(source: &[u8]) -> AsyncBuffer {
   AsyncBuffer::new(format!(
@@ -200,4 +201,49 @@ fn recognize_and_read_after() {
   let result = block_on(async { buffer.read(&mut rem).await });
   assert_eq!(result.unwrap(), 3);
   assert_eq!(String::from_utf8(rem).unwrap(), "hey");
+}
+
+#[test]
+fn empty_buffer_error() {
+  let mut buffer = AsyncBuffer::new("");
+  let result = block_on(async { recognize(&mut buffer).await });
+  assert!(result.is_err());
+  assert_eq!(
+    format!("{:?}", result.unwrap_err()),
+    format!(
+      "{:?}",
+      Error::new(
+        ErrorKind::UnexpectedEof,
+        "Reader exhausted before any recognizable line was parsed."
+      )
+    )
+  );
+}
+
+#[test]
+fn invalid_request_line_error() {
+  let mut buffer = AsyncBuffer::new("a\r\na");
+  let result = block_on(async { recognize(&mut buffer).await });
+  assert!(result.is_err());
+  assert_eq!(
+    format!("{:?}", result.unwrap_err()),
+    format!("{:?}", Error::new(ErrorKind::InvalidData, "Invalid request line: 'a'"))
+  );
+}
+
+#[test]
+fn invalid_termination() {
+  let mut buffer = AsyncBuffer::new("GET / HTTP/1.0\r\nbad-line");
+  let result = block_on(async { recognize(&mut buffer).await });
+  assert!(result.is_err());
+  assert_eq!(
+    format!("{:?}", result.unwrap_err()),
+    format!(
+      "{:?}",
+      Error::new(
+        ErrorKind::UnexpectedEof,
+        "Reader exhausted with non-terminated HTTP head. Last header line attempt: 'bad-line'"
+      )
+    )
+  );
 }
