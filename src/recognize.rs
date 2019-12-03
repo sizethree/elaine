@@ -195,7 +195,6 @@ where
     };
 
     let size = reader.read(&mut buf).await?;
-    println!("read {} bytes (capacity {:?})", size, marker);
     let chunk = fill_utf8(&buf[0..size], &mut reader).await?;
 
     let mut chars = chunk.chars();
