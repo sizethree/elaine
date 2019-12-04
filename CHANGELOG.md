@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased][unrel]
 
+## [1.1.0] - 2019-12-03
+
+- An attempt to make errors better.
+
 ## [1.0.0] - 2019-11-14
 
 - [`async-std`][async-std] released `1.0`; following suit.
@@ -23,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial implementation.
 
-[unrel]: https://github.com/sizethree/elaine/compare/v1.0.0...HEAD
+[unrel]: https://github.com/sizethree/elaine/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/sizethree/elaine/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/sizethree/elaine/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/sizethree/elaine/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/sizethree/elaine/compare/v0.1.0...v0.1.1
