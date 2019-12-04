@@ -13,50 +13,25 @@ enum Capacity {
   Four,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Stack(Option<String>, Option<String>);
-
-impl Default for Stack {
-  fn default() -> Stack {
-    Stack(None, None)
-  }
-}
 
 impl Stack {
   fn push(&mut self, content: String) {
-    if self.1.is_some() {
-      self.0 = self.1.to_owned()
-    }
+    self.0 = self.1.take();
     self.1 = Some(content);
   }
 
   fn last_mut(&mut self) -> Option<&mut String> {
-    if let Some(value) = self.1.as_mut() {
-      return Some(value);
-    }
-
-    None
+    self.1.as_mut()
   }
 
   fn fin(mut self) -> Option<String> {
-    if let Some(value) = self.1.as_mut() {
-      return Some(value.to_owned());
-    }
-    None
+    self.1.take()
   }
 
   fn pop(&mut self) -> Option<String> {
-    if self.0.is_none() {
-      return None;
-    }
-
-    if let Some(value) = self.0.as_mut() {
-      let out = value.to_owned();
-      self.0 = None;
-      return Some(out);
-    }
-
-    None
+    self.0.take()
   }
 }
 
