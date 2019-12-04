@@ -1,6 +1,7 @@
 use async_std::io::Read;
 use async_std::prelude::*;
 use std::io::{Error, ErrorKind};
+use std::marker::Unpin;
 
 use crate::head::{Builder, Head};
 
@@ -12,69 +13,31 @@ enum Capacity {
   Four,
 }
 
-#[derive(Debug)]
-struct Marker {
-  capacity: Capacity,
-}
-
-impl Default for Marker {
-  fn default() -> Marker {
-    Marker {
-      capacity: Capacity::Four,
-    }
-  }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Stack(Option<String>, Option<String>);
-
-impl std::default::Default for Stack {
-  fn default() -> Stack {
-    Stack(None, None)
-  }
-}
 
 impl Stack {
   fn push(&mut self, content: String) {
-    if self.1.is_some() {
-      self.0 = self.1.to_owned()
-    }
+    self.0 = self.1.take();
     self.1 = Some(content);
   }
 
   fn last_mut(&mut self) -> Option<&mut String> {
-    if let Some(value) = self.1.as_mut() {
-      return Some(value);
-    }
-
-    None
+    self.1.as_mut()
   }
 
   fn fin(mut self) -> Option<String> {
-    if let Some(value) = self.1.as_mut() {
-      return Some(value.to_owned());
-    }
-    None
+    self.1.take()
   }
 
   fn pop(&mut self) -> Option<String> {
-    if self.0.is_none() {
-      return None;
-    }
-
-    if let Some(value) = self.0.as_mut() {
-      let out = value.to_owned();
-      self.0 = None;
-      return Some(out);
-    }
-
-    None
+    self.0.take()
   }
 }
 
 async fn fill_utf8<R>(original: &[u8], reader: R) -> Result<String, Error>
 where
-  R: Read + std::marker::Unpin,
+  R: Read + Unpin,
 {
   match std::str::from_utf8(original) {
     Ok(c) => Ok(String::from(c)),
@@ -167,6 +130,14 @@ where
   }
 }
 
+fn invalid_read<H>(mut stack: Stack) -> Result<H, Error> {
+  let message = match stack.last_mut() {
+    Some(value) => format!("Reader exhausted before terminating HTTP head (last read '{}')", value),
+    None => String::from("Reader exhausted before terminating HTTP head"),
+  };
+  Err(Error::new(ErrorKind::UnexpectedEof, message))
+}
+
 /// Reads from the reader, consuming valid utf-8 charactes in 1-4 byte sized chunks, stopping
 /// after successfully reaching a [CR LF sequence][rfc-1945]. The method will return an
 /// `std::io::Error` under any of the following conditions:
@@ -184,14 +155,14 @@ where
 /// [read]: https://docs.rs/async-std/0.99.12/async_std/io/trait.Read.html
 pub async fn recognize<R>(mut reader: R) -> Result<Head, Error>
 where
-  R: Read + std::marker::Unpin,
+  R: Read + Unpin,
 {
-  let mut marker = Marker::default();
-  let mut headers = Stack::default();
+  let mut marker = Capacity::Four;
+  let mut stack = Stack::default();
   let mut builder = Builder::new();
 
   loop {
-    let mut buf: Vec<u8> = match &marker.capacity {
+    let mut buf: Vec<u8> = match marker {
       Capacity::Four => vec![0x13, 0x10, 0x13, 0x10],
       Capacity::Three => vec![0x10, 0x13, 0x10],
       Capacity::Two => vec![0x13, 0x10],
@@ -203,7 +174,7 @@ where
 
     let mut chars = chunk.chars();
 
-    match (&marker.capacity, chars.next(), chars.next(), chars.next(), chars.next()) {
+    match (marker, chars.next(), chars.next(), chars.next(), chars.next()) {
       // clean terminal
       (_, Some('\r'), Some('\n'), Some('\r'), Some('\n')) => break,
       // terminal from previous '\r\n\r'
@@ -212,124 +183,128 @@ where
       (Capacity::Two, Some('\r'), Some('\n'), _, _) => break,
       // non-terminal: had a cr lf but now working with something else
       (Capacity::Two, Some(one), Some(two), _, _) => {
-        headers.push([one, two].iter().collect::<String>());
-        marker.capacity = Capacity::Four;
+        stack.push([one, two].iter().collect::<String>());
+        marker = Capacity::Four;
       }
       // terminal from previous '\r'
       (Capacity::Three, Some('\n'), Some('\r'), Some('\n'), _) => break,
       (Capacity::Three, Some('\n'), Some(one), None, None) => {
-        headers.push(format!("{}", one));
-        marker.capacity = Capacity::Four;
+        stack.push(format!("{}", one));
+        marker = Capacity::Four;
       }
       (Capacity::Three, Some('\n'), Some(one), Some(two), None) => {
-        headers.push(format!("{}{}", one, two));
-        marker.capacity = Capacity::Four;
+        stack.push(format!("{}{}", one, two));
+        marker = Capacity::Four;
       }
 
       // any char followed by '\r\n\r' - queue up single read
       (_, Some(one), Some('\r'), Some('\n'), Some('\r')) => {
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => header.push(one),
-          None => headers.push(one.to_string()),
+          None => stack.push(one.to_string()),
         }
-        marker.capacity = Capacity::One;
+        marker = Capacity::One;
       }
 
       // any chars followed by '\r\n' - queue up double read
       (_, Some(one), Some(two), Some('\r'), Some('\n')) => {
         let mem = format!("{}{}", one, two);
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => header.push_str(mem.as_str()),
-          None => headers.push(mem),
+          None => stack.push(mem),
         }
-        marker.capacity = Capacity::Two;
+        marker = Capacity::Two;
       }
 
       // any chars followed by '\r' - queue up triple read
       (_, Some(one), Some(two), Some(three), Some('\r')) => {
         let mem = format!("{}{}{}", one, two, three);
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => header.push_str(mem.as_str()),
-          None => headers.push(mem),
+          None => stack.push(mem),
         }
-        marker.capacity = Capacity::Three;
+        marker = Capacity::Three;
       }
 
       (_, Some(one), Some('\r'), None, None) => {
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => {
             header.push(one);
           }
-          None => headers.push([one].iter().collect::<String>()),
+          None => stack.push([one].iter().collect::<String>()),
         }
-        marker.capacity = Capacity::Three;
+        marker = Capacity::Three;
       }
 
       (_, Some(one), Some(two), Some('\r'), None) => {
         let mem = format!("{}{}", one, two);
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => header.push_str(mem.as_str()),
-          None => headers.push(mem),
+          None => stack.push(mem),
         }
-        marker.capacity = Capacity::Three;
+        marker = Capacity::Three;
       }
 
       (_, Some('\r'), Some('\n'), Some(one), Some(two)) => {
-        headers.push([one, two].iter().collect::<String>());
-        marker.capacity = Capacity::Four;
+        stack.push([one, two].iter().collect::<String>());
+        marker = Capacity::Four;
       }
 
       (_, Some(one), Some('\r'), Some('\n'), Some(two)) => {
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => {
             header.push(one);
           }
-          None => headers.push(one.to_string()),
+          None => stack.push(one.to_string()),
         }
-        headers.push(two.to_string());
-        marker.capacity = Capacity::Four;
+        stack.push(two.to_string());
+        marker = Capacity::Four;
       }
 
       (_, Some(one), Some(two), Some(three), Some(four)) => {
         let mem = format!("{}{}{}{}", one, two, three, four);
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => header.push_str(mem.as_str()),
-          None => headers.push(mem),
+          None => stack.push(mem),
         }
-        marker.capacity = Capacity::Four;
+        marker = Capacity::Four;
       }
       (_, Some(one), Some(two), Some(three), None) => {
         let mem = format!("{}{}{}", one, two, three);
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => header.push_str(mem.as_str()),
-          None => headers.push(mem),
+          None => stack.push(mem),
         }
-        marker.capacity = Capacity::Four;
+        marker = Capacity::Four;
       }
       (_, Some(one), Some(two), None, None) => {
         let mem = format!("{}{}", one, two);
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => header.push_str(mem.as_str()),
-          None => headers.push(mem),
+          None => stack.push(mem),
         }
-        marker.capacity = Capacity::Four;
+        marker = Capacity::Four;
       }
       (_, Some(one), None, None, None) => {
-        match headers.last_mut() {
+        match stack.last_mut() {
           Some(header) => header.push(one),
-          None => headers.push(format!("{}", one)),
+          None => stack.push(format!("{}", one)),
         }
-        marker.capacity = Capacity::Four;
+        marker = Capacity::Four;
       }
-      _ => return Err(Error::new(ErrorKind::Other, "Invalid sequence")),
+      (_, Some(_), None, Some(_), Some(_)) => return invalid_read(stack),
+      (_, Some(_), None, Some(_), None) => return invalid_read(stack),
+      (_, Some(_), None, None, Some(_)) => return invalid_read(stack),
+      (_, Some(_), Some(_), None, Some(_)) => return invalid_read(stack),
+      (_, None, _, _, _) => return invalid_read(stack),
     }
 
-    if let Some(complete) = headers.pop() {
+    if let Some(complete) = stack.pop() {
       builder.insert(complete)?;
     }
   }
 
-  if let Some(last) = headers.fin() {
+  if let Some(last) = stack.fin() {
     builder.insert(last)?;
   }
 

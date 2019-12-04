@@ -114,6 +114,10 @@ impl Builder {
     self.inner
   }
 
+  pub fn len(&self) -> usize {
+    self.inner._headers.len()
+  }
+
   pub fn insert(&mut self, line: String) -> Result<(), Error> {
     if self.inner._req.is_none() {
       let req = parse_request_line(line)?;
