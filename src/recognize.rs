@@ -300,12 +300,12 @@ where
     }
 
     if let Some(complete) = stack.pop() {
-      builder.insert(complete)?;
+      builder = builder.insert(complete)?;
     }
   }
 
   if let Some(last) = stack.fin() {
-    builder.insert(last)?;
+    builder = builder.insert(last)?;
   }
 
   Ok(builder.collect::<Head>())

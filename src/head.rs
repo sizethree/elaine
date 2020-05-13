@@ -118,18 +118,24 @@ impl Builder {
     self.inner._headers.len()
   }
 
-  pub fn insert(&mut self, line: String) -> Result<(), Error> {
+  pub fn insert(mut self, line: String) -> Result<Self, Error> {
     if self.inner._req.is_none() {
       let req = parse_request_line(line)?;
-      self.inner._req = Some(req);
-      return Ok(());
+
+      return Ok(Builder {
+        inner: Head {
+          _req: Some(req),
+          ..self.inner
+        },
+      });
     }
 
     if let Some(header) = parse_header_line(line) {
-      return self.inner.add_header(header);
+      self.inner.add_header(header)?;
+      return Ok(Builder { inner: self.inner });
     }
 
-    Ok(())
+    Ok(Builder { inner: self.inner })
   }
 }
 
@@ -145,6 +151,17 @@ impl From<Builder> for Head {
   fn from(builder: Builder) -> Head {
     builder.inner
   }
+}
+
+fn take_equal<S: std::fmt::Display>(key: &String, attempt: &S) -> Option<String> {
+  let lower_key = key.to_lowercase();
+  let lower_value = format!("{}", attempt).to_lowercase();
+
+  if lower_key.as_str() == lower_value.as_str() {
+    return Some(lower_key);
+  }
+
+  None
 }
 
 impl Head {
@@ -171,13 +188,7 @@ impl Head {
     self
       ._headers
       .iter()
-      .filter_map(|Header(key, value)| {
-        if key.as_str() == format!("{}", target).as_str() {
-          Some(value.clone())
-        } else {
-          None
-        }
-      })
+      .filter_map(|Header(key, value)| take_equal(key, &target).map(|_| value.clone()))
       .nth(0)
   }
 
@@ -211,5 +222,33 @@ impl std::fmt::Display for Head {
       self.version(),
       self._len,
     )
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use super::{Builder, Head};
+
+  #[test]
+  fn test_find_header_none() {
+    let builder = Builder::new()
+      .insert("GET /test HTTP/1.1".to_string())
+      .unwrap()
+      .insert("Authorization: some-token".to_string())
+      .unwrap();
+
+    let head = builder.collect::<Head>();
+    assert!(head.find_header("none").is_none());
+  }
+
+  #[test]
+  fn test_find_header_insensitive() {
+    let builder = Builder::new()
+      .insert("GET /test HTTP/1.1".to_string())
+      .unwrap()
+      .insert("Authorization: some-token".to_string())
+      .unwrap();
+    let head = builder.collect::<Head>();
+    assert!(head.find_header("authorization").is_some());
   }
 }
