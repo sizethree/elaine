@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased][unrel]
 
+## [1.2.0] - 2020-05-13
+
+- Case insensitive header lookups.
+
 ## [1.1.0] - 2019-12-03
 
 - An attempt to make errors better.
@@ -27,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial implementation.
 
-[unrel]: https://github.com/sizethree/elaine/compare/v1.1.0...HEAD
+[unrel]: https://github.com/sizethree/elaine/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/sizethree/elaine/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/sizethree/elaine/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/sizethree/elaine/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/sizethree/elaine/compare/v0.1.1...v0.2.0
